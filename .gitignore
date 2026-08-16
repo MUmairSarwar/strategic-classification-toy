@@ -201,6 +201,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Local LinkedIn image export
+reports/figures/strategic_classification.png
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
