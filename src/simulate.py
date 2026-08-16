@@ -1,101 +1,121 @@
-import numpy as np
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.model_selection import train_test_split
 
-RANDOM_SEED = 42
-np.random.seed(RANDOM_SEED)
 
-def make_data(n=2000):
-    x1 = np.random.normal(0, 1, n)
-    x2 = np.random.normal(0, 1, n)
+ROOT = Path(__file__).resolve().parents[1]
+REPORTS = ROOT / "reports"
+FIGURES = REPORTS / "figures"
 
-    logits = 1.2 * x1 + 0.8 * x2 - 0.2
-    p = 1 / (1 + np.exp(-logits))
-    y = (np.random.rand(n) < p).astype(int)
 
-    X = np.column_stack([x1, x2])
-    return X, y
+def make_data(n: int = 2_500, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
+    """Generate a reproducible two-feature classification problem."""
+    rng = np.random.default_rng(seed)
+    x1 = rng.normal(0, 1, n)
+    x2 = rng.normal(0, 1, n)
+    probability = 1 / (1 + np.exp(-(1.2 * x1 + 0.8 * x2 - 0.2)))
+    target = (rng.random(n) < probability).astype(int)
+    return np.column_stack([x1, x2]), target
 
-def strategic_response(X, w, cost=0.4, max_delta=2.0):
-    X_new = X.copy()
-    w1 = w[0]
 
-    if w1 <= 0:
-        return X_new
+def strategic_response(
+    features: np.ndarray,
+    model: LogisticRegression,
+    cost_per_unit: float = 0.4,
+    benefit: float = 1.0,
+    max_delta: float = 2.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply an individual minimum-cost response to the model's decision rule.
 
-    if (w1 - cost) <= 0:
-        return X_new
+    A currently rejected individual changes only x1 and only when the smallest
+    change required for acceptance is affordable and below ``max_delta``.
+    """
+    changed = features.copy()
+    deltas = np.zeros(len(features))
+    weight = float(model.coef_[0, 0])
+    if weight <= 0:
+        return changed, deltas
 
-    X_new[:, 0] = X_new[:, 0] + max_delta
-    return X_new
+    scores = model.decision_function(features)
+    required = np.maximum(0.0, (-scores + 1e-6) / weight)
+    worthwhile = (scores < 0) & (required <= max_delta) & (cost_per_unit * required < benefit)
+    deltas[worthwhile] = required[worthwhile]
+    changed[:, 0] += deltas
+    return changed, deltas
 
-def train_and_evaluate(X, y):
-    n = len(y)
-    idx = np.random.permutation(n)
-    split = int(0.8 * n)
-    train_idx, test_idx = idx[:split], idx[split:]
 
-    X_train, y_train = X[train_idx], y[train_idx]
-    X_test, y_test = X[test_idx], y[test_idx]
+def evaluate(model: LogisticRegression, features: np.ndarray, target: np.ndarray) -> dict[str, float]:
+    probabilities = model.predict_proba(features)[:, 1]
+    predictions = model.predict(features)
+    return {
+        "accuracy": float(accuracy_score(target, predictions)),
+        "roc_auc": float(roc_auc_score(target, probabilities)),
+        "positive_decision_rate": float(predictions.mean()),
+    }
 
-    clf = LogisticRegression(max_iter=2000)
-    clf.fit(X_train, y_train)
 
-    proba = clf.predict_proba(X_test)[:, 1]
-    pred = (proba >= 0.5).astype(int)
-
-    acc = accuracy_score(y_test, pred)
-    auc = roc_auc_score(y_test, proba)
-
-    w = clf.coef_.ravel()
-    b = clf.intercept_[0]
-    return clf, (X_test, y_test, proba, pred, acc, auc, w, b)
-
-def plot_boundary(clf, X, y, title):
-    x1_min, x1_max = X[:, 0].min() - 1, X[:, 0].max() + 1
-    x2_min, x2_max = X[:, 1].min() - 1, X[:, 1].max() + 1
-
-    xx1, xx2 = np.meshgrid(
-        np.linspace(x1_min, x1_max, 200),
-        np.linspace(x2_min, x2_max, 200)
+def run_experiment(cost_per_unit: float = 0.4) -> tuple[dict, LogisticRegression, np.ndarray, np.ndarray, np.ndarray]:
+    features, target = make_data()
+    x_train, x_test, y_train, y_test = train_test_split(
+        features, target, test_size=0.25, random_state=42, stratify=target
     )
-    grid = np.c_[xx1.ravel(), xx2.ravel()]
-    zz = clf.predict_proba(grid)[:, 1].reshape(xx1.shape)
+    model = LogisticRegression(max_iter=2_000, random_state=42).fit(x_train, y_train)
+    baseline = evaluate(model, x_test, y_test)
+    strategic_features, deltas = strategic_response(x_test, model, cost_per_unit=cost_per_unit)
+    strategic = evaluate(model, strategic_features, y_test)
+    metrics = {
+        "sample_size": len(features),
+        "test_size": len(x_test),
+        "cost_per_unit": cost_per_unit,
+        "benefit": 1.0,
+        "max_delta": 2.0,
+        "baseline": baseline,
+        "strategic": strategic,
+        "manipulation_rate": float((deltas > 0).mean()),
+        "mean_delta_among_manipulators": float(deltas[deltas > 0].mean()),
+    }
+    return metrics, model, x_test, y_test, strategic_features
 
-    plt.figure()
-    plt.contourf(xx1, xx2, zz, levels=20)
-    plt.scatter(X[:, 0], X[:, 1], c=y, s=10)
-    plt.title(title)
-    plt.xlabel("x1 (manipulable)")
-    plt.ylabel("x2 (non-manipulable)")
-    plt.tight_layout()
 
-def main():
-    X, y = make_data(n=2500)
+def _plot(metrics, model, x_test, y_test, strategic_features) -> None:
+    costs = np.linspace(0.1, 1.2, 12)
+    manipulation_rates, accuracies = [], []
+    for cost in costs:
+        changed, deltas = strategic_response(x_test, model, cost_per_unit=float(cost))
+        manipulation_rates.append((deltas > 0).mean())
+        accuracies.append(evaluate(model, changed, y_test)["accuracy"])
 
-    clf, (X_test, y_test, proba, pred, acc, auc, w, b) = train_and_evaluate(X, y)
-    print("=== Standard setting (no strategic behavior) ===")
-    print(f"Accuracy: {acc:.4f}")
-    print(f"ROC-AUC : {auc:.4f}")
-    print(f"Learned weights: w={w}, b={b:.4f}")
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4.8))
+    axes[0].scatter(x_test[:, 0], x_test[:, 1], c=y_test, s=12, alpha=0.55, cmap="coolwarm")
+    axes[0].set(title="Before strategic response", xlabel="x1 (manipulable)", ylabel="x2 (fixed)")
+    axes[1].scatter(strategic_features[:, 0], strategic_features[:, 1], c=y_test, s=12, alpha=0.55, cmap="coolwarm")
+    axes[1].set(title="After individual best responses", xlabel="x1 (manipulable)", ylabel="x2 (fixed)")
+    axes[2].plot(costs, np.array(manipulation_rates) * 100, marker="o", label="Manipulation rate (%)")
+    axes[2].plot(costs, np.array(accuracies) * 100, marker="s", label="Accuracy (%)")
+    axes[2].set(title="Sensitivity to manipulation cost", xlabel="Cost per unit", ylabel="Percent")
+    axes[2].legend()
+    fig.suptitle("Strategic Classification: Model Decisions Change Behaviour", fontsize=17)
+    fig.tight_layout()
+    fig.savefig(FIGURES / "strategic_classification.svg", bbox_inches="tight")
+    fig.savefig(FIGURES / "strategic_classification.png", dpi=180, bbox_inches="tight")
+    plt.close(fig)
 
-    plot_boundary(clf, X_test, y_test, "No strategic behavior (test set)")
 
-    X_test_strat = strategic_response(X_test, w, cost=0.4, max_delta=2.0)
-    proba_s = clf.predict_proba(X_test_strat)[:, 1]
-    pred_s = (proba_s >= 0.5).astype(int)
+def main() -> None:
+    metrics, model, x_test, y_test, strategic_features = run_experiment()
+    REPORTS.mkdir(exist_ok=True)
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    (REPORTS / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    _plot(metrics, model, x_test, y_test, strategic_features)
+    print(json.dumps(metrics, indent=2))
 
-    acc_s = accuracy_score(y_test, pred_s)
-    auc_s = roc_auc_score(y_test, proba_s)
-
-    print("\n=== Under strategic behavior (users modify x1) ===")
-    print(f"Accuracy: {acc_s:.4f}")
-    print(f"ROC-AUC : {auc_s:.4f}")
-
-    plot_boundary(clf, X_test_strat, y_test, "Strategic behavior: shifted x1 (test set)")
-
-    plt.show()
 
 if __name__ == "__main__":
     main()
