@@ -1,5 +1,7 @@
 # Strategic Classification and Behavioural Response
 
+[![tests](https://github.com/MUmairSarwar/strategic-classification-toy/actions/workflows/tests.yml/badge.svg)](https://github.com/MUmairSarwar/strategic-classification-toy/actions/workflows/tests.yml)
+
 A small, reproducible experiment showing why predictive models cannot always treat people as passive data points. When a scoring rule affects access to an outcome, people may change features that the model rewards.
 
 ![Experiment overview](reports/figures/strategic_classification.svg)
