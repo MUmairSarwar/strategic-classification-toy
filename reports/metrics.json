@@ -1,0 +1,19 @@
+{
+  "sample_size": 2500,
+  "test_size": 625,
+  "cost_per_unit": 0.4,
+  "benefit": 1.0,
+  "max_delta": 2.0,
+  "baseline": {
+    "accuracy": 0.704,
+    "roc_auc": 0.8001232665639446,
+    "positive_decision_rate": 0.4608
+  },
+  "strategic": {
+    "accuracy": 0.5056,
+    "roc_auc": 0.7727426810477658,
+    "positive_decision_rate": 0.9632
+  },
+  "manipulation_rate": 0.5024,
+  "mean_delta_among_manipulators": 0.8366533950505034
+}
