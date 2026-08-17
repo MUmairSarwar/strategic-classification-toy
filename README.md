@@ -43,6 +43,13 @@ python -m src.simulate
 
 Credit, admissions, hiring and platform-ranking models can change the behaviour they measure. A model that performs well on historical data may behave differently after its decision rule becomes actionable. Useful follow-up work would retrain against anticipated responses, add heterogeneous costs and evaluate fairness across groups.
 
+## Other selected projects
+
+- [Rhine-Main Heat Risk Forecasting](https://github.com/MUmairSarwar/germany-heat-risk-forecasting)
+- [Retail Customer & Operations Analytics](https://github.com/MUmairSarwar/retail-customer-analytics)
+- [Telecom Customer Churn Prediction](https://github.com/MUmairSarwar/customer-churn-prediction)
+- [Robust Federated Learning](https://github.com/MUmairSarwar/robust-federated-learning-ml-security)
+
 ## Author
 
-Muhammad Umair Sarwar — Mathematics in Data Science, TU Darmstadt
+Muhammad Umair Sarwar - M.Sc. Mathematics student (Mathematics in Data Science), TU Darmstadt.
